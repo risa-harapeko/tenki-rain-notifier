@@ -87,12 +87,19 @@ export async function processEvents(events: LineEvent[], s: Services, nowMs = Da
     }
     try {
       const text = await respond(event.message, s, nowMs);
-      console.log(`webhook: 返信「${text.split("\n")[0]}」`);
+      // 地名などの個人情報を残さないよう、ログには返信文ではなくメッセージの種類だけを書く
+      console.log(`webhook: ${describeMessage(event.message)} に返信`);
       await s.line.reply(event.replyToken, text);
     } catch (e) {
       console.error("webhook: メッセージの処理に失敗", e);
     }
   }
+}
+
+/** ログ用のメッセージの種類（例: location / text:morning）。送られてきた値そのものは含めない */
+export function describeMessage(message: LineMessage): string {
+  if (message.type === "text" && typeof message.text === "string") return `text:${parseCommand(message.text).type}`;
+  return message.type;
 }
 
 /** メッセージに応じて設定を更新し、返信文を返す */

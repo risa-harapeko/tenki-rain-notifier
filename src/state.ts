@@ -71,7 +71,8 @@ export async function getSettings(kv: KvStore, config: Config): Promise<Settings
       updatedAt: typeof p.updatedAt === "string" ? p.updatedAt : undefined,
     };
   } catch (e) {
-    console.error("state: settings の読み込みに失敗したため初期値を使います", e);
+    // JSON の解析エラーには保存値の一部（地名など）が含まれるため、エラーの種類だけを書く
+    console.error(`state: settings の読み込みに失敗したため初期値を使います（${(e as Error).name}）`);
     return defaults;
   }
 }

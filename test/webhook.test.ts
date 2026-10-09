@@ -1,6 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { getMorningFlag, getRainState, getSettings, saveRainState, setMorningFlag } from "../src/state";
-import { handleWebhook, processEvents, verifySignature } from "../src/webhook";
+import { describeMessage, handleWebhook, processEvents, verifySignature } from "../src/webhook";
 import { TOKYO, at, makeServices, storeSettings } from "./helpers";
 
 async function sign(body: string, secret: string): Promise<string> {
@@ -187,6 +187,60 @@ describe("急な雨の通知時間帯", () => {
     const s = makeServices();
     expect(await send(s, "雨 22-7")).toContain("日付をまたぐ指定はできません");
     expect((await getSettings(s.kv, s.config)).rainHours).toEqual({ start: 6, end: 23 });
+  });
+});
+
+describe("ログに地名を残さない", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  function captureLogs(): () => string {
+    const spies = (["log", "warn", "error"] as const).map((level) => vi.spyOn(console, level).mockImplementation(() => {}));
+    return () => spies.flatMap((spy) => spy.mock.calls.map((args) => args.map(String).join(" "))).join("\n");
+  }
+
+  it("位置情報・地名・見つからない地名・設定の確認のどれでも、ログに地名や住所が出ない", async () => {
+    const logs = captureLogs();
+    const s = makeServices({
+      geocode: async (q) => (q === "横浜市" ? { name: "神奈川県横浜市", lat: 35.45, lon: 139.63 } : null),
+    });
+    await processEvents(
+      [
+        {
+          type: "message",
+          replyToken: "rt",
+          source: { userId: "Uowner" },
+          message: { type: "location", address: "日本、〒220-0000 神奈川県横浜市西区みなとみらい1-2", latitude: 35.45, longitude: 139.63 },
+        },
+        textEvent("地点 横浜市"),
+        textEvent("地点 しぶやく"),
+        textEvent("設定"),
+        textEvent("地点"),
+      ],
+      s,
+      at(21),
+    );
+    expect(s.line.replies).toHaveLength(5);
+    const output = logs();
+    expect(output).toContain("webhook: location に返信");
+    expect(output).toContain("webhook: text:location に返信");
+    for (const word of ["横浜", "神奈川", "みなとみらい", "しぶやく", "220"]) expect(output).not.toContain(word);
+  });
+
+  it("保存データが壊れていても、エラーログに保存値の中身が出ない", async () => {
+    const logs = captureLogs();
+    const s = makeServices();
+    await s.kv.put("settings", '{"location":{"name":"神奈川県横浜市"');
+    await processEvents([textEvent("設定")], s, at(21));
+    expect(logs()).toContain("settings の読み込みに失敗");
+    expect(logs()).not.toContain("横浜");
+  });
+
+  it("describeMessage はコマンドの種類だけを返す", () => {
+    expect(describeMessage({ type: "text", text: "地点 横浜市" })).toBe("text:location");
+    expect(describeMessage({ type: "text", text: "こんにちは" })).toBe("text:unknown");
+    expect(describeMessage({ type: "location", latitude: 35, longitude: 136 })).toBe("location");
   });
 });
 
