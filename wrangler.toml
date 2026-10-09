@@ -6,10 +6,10 @@ compatibility_date = "2025-09-01"
 [triggers]
 crons = ["*/10 * * * *"]
 
-# `npx wrangler kv namespace create STATE` の出力の id に置き換える
+# `npx wrangler kv namespace create STATE` で作成した KV
 [[kv_namespaces]]
 binding = "STATE"
-id = "REPLACE_WITH_YOUR_KV_NAMESPACE_ID"
+id = "254c1bb35749432b9186d7e782848e61"
 
 [observability]
 enabled = true
