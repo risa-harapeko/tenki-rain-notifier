@@ -1,0 +1,27 @@
+name = "tenki-rain-notifier"
+main = "src/index.ts"
+compatibility_date = "2025-09-01"
+
+# 10分ごと・24時間。何をするかは KV の設定で判定する（spec.md 2.3 / 3.0）
+[triggers]
+crons = ["*/10 * * * *"]
+
+# `npx wrangler kv namespace create STATE` の出力の id に置き換える
+[[kv_namespaces]]
+binding = "STATE"
+id = "REPLACE_WITH_YOUR_KV_NAMESPACE_ID"
+
+[observability]
+enabled = true
+
+# spec.md 5.1。秘密情報はここに書かず `wrangler secret put` で登録する（5.2）
+[vars]
+DEFAULT_MORNING_TIME = "07:00"
+DEFAULT_RAIN_HOURS = "6-23"
+UMBRELLA_END_HOUR = "22"
+UMBRELLA_PROB_REQUIRED = "50"
+UMBRELLA_PROB_FOLDING = "30"
+UMBRELLA_PRECIP_REQUIRED = "1.0"
+RAIN_THRESHOLD = "1.0"
+MAX_ALERTS_PER_DAY = "3"
+ALERT_COOLDOWN_MIN = "60"
