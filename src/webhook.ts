@@ -91,7 +91,7 @@ export async function processEvents(events: LineEvent[], s: Services, nowMs = Da
     try {
       const text = isMessage
         ? await respond(event.message!, s, nowMs)
-        : msg.welcomeMessage(await getSettings(s.kv, s.config));
+        : msg.welcomeMessage();
       // 地名などの個人情報を残さないよう、ログには返信文ではなくメッセージの種類だけを書く
       console.log(`webhook: ${isMessage ? describeMessage(event.message!) : "follow"} に返信`);
       await s.line.reply(event.replyToken, text);

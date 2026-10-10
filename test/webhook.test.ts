@@ -302,25 +302,28 @@ describe("友だち追加（follow）", () => {
     return { type: "follow", replyToken: "rt", source: { userId } };
   }
 
-  it("地点が未設定なら、あいさつ・地点設定のお願い・使い方を返す", async () => {
+  it("友だち追加すると、ようこそメッセージと設定の手順を返す", async () => {
     const s = makeServices();
     await processEvents([followEvent()], s, at(21));
     const text = s.line.replies[0].text;
-    expect(text.startsWith("👋 友だち追加ありがとうございます！")).toBe(true);
-    expect(text).toContain("まずは、天気を調べる地点を設定してください");
-    expect(text).toContain("☂️ 雨通知の使い方");
-    expect(text).not.toContain("現在の設定");
+    expect(text.startsWith("☔ 雨ふり予報へようこそ！\n毎日の雨雲チェックをお手伝いします✨")).toBe(true);
+    expect(text).toContain("📍 【STEP 1】通知したい場所を決める（どちらか送信）");
+    expect(text).toContain("⏰ 【STEP 2】朝の通知時間を決める（4:00〜11:50）");
+    expect(text).toContain("🚨 【STEP 3】急な雨アラートの時間帯を決める");
+    expect(text.endsWith("・ 「設定」 と送ると、現在の登録内容が見られます！")).toBe(true);
+    // 段落の区切りは空行1つ
+    expect(text).not.toContain("\n\n\n");
   });
 
-  it("地点が設定済み（ブロック解除など）なら、現在の設定と使い方を返す", async () => {
-    const s = makeServices();
-    await storeSettings(s.kv, { location: TOKYO, morningTime: "06:30" });
-    await processEvents([followEvent()], s, at(21));
-    const text = s.line.replies[0].text;
-    expect(text).toContain("⚙️ 現在の設定");
-    expect(text).toContain("⏰ 朝の通知：6:30");
-    expect(text).toContain("☂️ 雨通知の使い方");
-    expect(text).not.toContain("まずは");
+  it("案内に書いた例の言葉は、そのまま送ると設定として受け付けられる", async () => {
+    const s = makeServices({
+      geocode: async () => ({ name: "東京都渋谷区", lat: 35.66, lon: 139.7 }),
+      reverseGeocode: async () => "東京都渋谷区",
+    });
+    expect(await send(s, "地点 東京都渋谷区")).toContain("地点を「東京都渋谷区」に設定しました");
+    expect(await send(s, "朝 7:00")).toContain("朝の通知時刻を 7:00 に変更しました");
+    expect(await send(s, "雨 7-22")).toContain("7:00〜22:00 に変更しました");
+    expect(await send(s, "設定")).toContain("⚙️ 現在の設定");
   });
 
   it("本人以外の友だち追加には返信しない", async () => {

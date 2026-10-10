@@ -116,19 +116,28 @@ export function helpMessage(): string {
 }
 
 /** 友だち追加・ブロック解除のときの案内 */
-export function welcomeMessage(s: Settings): string {
-  const lines = [
-    "👋 友だち追加ありがとうございます！",
-    "毎朝の天気と傘の要否、1時間以内の急な雨を LINE でお知らせします。",
+export function welcomeMessage(): string {
+  return [
+    "☔ 雨ふり予報へようこそ！",
+    "毎日の雨雲チェックをお手伝いします✨",
     "",
-  ];
-  if (s.location) {
-    lines.push(settingsMessage(s));
-  } else {
-    lines.push("📍 まずは、天気を調べる地点を設定してください。");
-  }
-  lines.push("", helpMessage());
-  return lines.join("\n");
+    "まずは、以下の手順で「地点」と「通知時間」を設定してください！",
+    "",
+    "📍 【STEP 1】通知したい場所を決める（どちらか送信）",
+    "・トーク画面の「＋」を押し、「位置情報」からいまの場所を送る",
+    "・または 「地点 東京都渋谷区」 のように文字で送る",
+    "",
+    "⏰ 【STEP 2】朝の通知時間を決める（4:00〜11:50）",
+    "・ 「朝 7:00」 のように文字で送る",
+    "（※この時間に今日の天気をお知らせします）",
+    "",
+    "🚨 【STEP 3】急な雨アラートの時間帯を決める",
+    "・ 「雨 7-22」 のように文字で送る",
+    "（※この時間帯に雨雲が近づくとお知らせします）",
+    "",
+    "📋 【今の設定を確認したいとき】",
+    "・ 「設定」 と送ると、現在の登録内容が見られます！",
+  ].join("\n");
 }
 
 export function setupNeededMessage(): string {
