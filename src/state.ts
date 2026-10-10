@@ -2,6 +2,7 @@
 
 import type { Config } from "./config";
 import type { RainHours } from "./commands/schedule";
+import { roundCoord } from "./commands/location";
 import { isValidRainHours, parseMorningTime } from "./commands/schedule";
 import type { RainLevel } from "./weather/rainLevel";
 import { toJstIso } from "./time";
@@ -64,7 +65,10 @@ export async function getSettings(kv: KvStore, config: Config): Promise<Settings
   try {
     const p = JSON.parse(raw);
     return {
-      location: isValidLocation(p.location) ? p.location : null,
+      // 以前の形式で詳しい位置が保存されていても、丸めた値だけを使う
+      location: isValidLocation(p.location)
+        ? { ...p.location, lat: roundCoord(p.location.lat), lon: roundCoord(p.location.lon) }
+        : null,
       morningTime:
         typeof p.morningTime === "string" && parseMorningTime(p.morningTime).ok ? p.morningTime : defaults.morningTime,
       rainHours: p.rainHours && isValidRainHours(p.rainHours) ? p.rainHours : defaults.rainHours,

@@ -1,6 +1,6 @@
 // LINE からの設定変更（spec.md 3.5）
 
-import { isInJapan, nameFromLocationMessage } from "./commands/location";
+import { UNKNOWN_PLACE_NAME, isInJapan, roundCoord, shortenAddress } from "./commands/location";
 import { parseCommand } from "./commands/parse";
 import { parseMorningTime, parseRainHours, planMorningChange, toStoredTime } from "./commands/schedule";
 import * as msg from "./notify/messages";
@@ -113,11 +113,12 @@ export async function respond(message: LineMessage, s: Services, nowMs: number):
 
   if (message.type === "location") {
     if (typeof message.latitude !== "number" || typeof message.longitude !== "number") return msg.helpMessage();
+    // 場所の名前（title）は自宅の建物名などのこともあるため使わない
     return setLocation(s, settings, nowMs, {
-      name: nameFromLocationMessage(message.title, message.address),
       lat: message.latitude,
       lon: message.longitude,
       source: "location",
+      addressHint: message.address,
     });
   }
   if (message.type !== "text" || typeof message.text !== "string") return msg.helpMessage();
@@ -146,11 +147,28 @@ async function setLocationByName(s: Services, settings: Settings, nowMs: number,
     return msg.tryAgainLaterMessage();
   }
   if (!found) return msg.locationNotFoundMessage(query);
-  return setLocation(s, settings, nowMs, { ...found, source: "geocode" });
+  return setLocation(s, settings, nowMs, { lat: found.lat, lon: found.lon, source: "geocode", addressHint: found.name });
 }
 
-async function setLocation(s: Services, settings: Settings, nowMs: number, location: Location): Promise<string> {
-  if (!isInJapan(location.lat, location.lon)) return msg.outsideJapanMessage();
+interface LocationInput {
+  lat: number;
+  lon: number;
+  source: Location["source"];
+  /** リバースジオコーダが使えないときに地点名を作るための住所・地名 */
+  addressHint?: string;
+}
+
+/** 地点を保存する。住所は「都道府県＋市区町村」まで、緯度経度は約1km単位に丸めて持つ */
+async function setLocation(s: Services, settings: Settings, nowMs: number, input: LocationInput): Promise<string> {
+  if (!isInJapan(input.lat, input.lon)) return msg.outsideJapanMessage();
+  const lat = roundCoord(input.lat);
+  const lon = roundCoord(input.lon);
+  const location: Location = {
+    name: await resolvePlaceName(s, lat, lon, input.addressHint),
+    lat,
+    lon,
+    source: input.source,
+  };
   await saveSettings(s.kv, { ...settings, location }, nowMs);
 
   // 前の地点の雨の状態を持ち越さない（通知回数はそのまま）
@@ -159,6 +177,16 @@ async function setLocation(s: Services, settings: Settings, nowMs: number, locat
   if (rain.raining) await saveRainState(s.kv, date, { ...rain, raining: false });
 
   return msg.locationSetMessage(location.name, settings.morningTime);
+}
+
+async function resolvePlaceName(s: Services, lat: number, lon: number, addressHint?: string): Promise<string> {
+  try {
+    const name = await s.reverseGeocode(lat, lon);
+    if (name) return name;
+  } catch (e) {
+    console.error(`webhook: リバースジオコーダAPIの呼び出しに失敗（${(e as Error).message}）`);
+  }
+  return shortenAddress(addressHint) ?? UNKNOWN_PLACE_NAME;
 }
 
 async function setMorningTime(s: Services, settings: Settings, nowMs: number, value: string): Promise<string> {

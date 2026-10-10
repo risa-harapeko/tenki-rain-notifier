@@ -71,33 +71,86 @@ describe("本人確認", () => {
 });
 
 describe("地点", () => {
-  it("位置情報を送ると地点を保存する", async () => {
-    const s = makeServices();
+  function locationEvent(message: Record<string, unknown>) {
+    return { type: "message", replyToken: "rt", source: { userId: "Uowner" }, message: { type: "location", ...message } };
+  }
+
+  it("位置情報を送ると、市区町村名と約1km単位に丸めた位置だけを保存する", async () => {
+    const asked: number[][] = [];
+    const s = makeServices({
+      reverseGeocode: async (lat, lon) => {
+        asked.push([lat, lon]);
+        return "東京都渋谷区";
+      },
+    });
     await processEvents(
       [
-        {
-          type: "message",
-          replyToken: "rt",
-          source: { userId: "Uowner" },
-          message: { type: "location", title: "渋谷駅", address: "日本、東京都渋谷区", latitude: 35.658, longitude: 139.7016 },
-        },
+        locationEvent({
+          title: "サンプルマンション",
+          address: "日本、〒150-0002 東京都渋谷区渋谷2丁目21-1",
+          latitude: 35.658034,
+          longitude: 139.701636,
+        }),
       ],
       s,
       at(21),
     );
-    expect(s.line.replies[0].text).toContain("地点を「渋谷駅」に設定しました");
+    expect(s.line.replies[0].text).toContain("地点を「東京都渋谷区」に設定しました");
     expect((await getSettings(s.kv, s.config)).location).toEqual({
-      name: "渋谷駅",
-      lat: 35.658,
-      lon: 139.7016,
+      name: "東京都渋谷区",
+      lat: 35.66,
+      lon: 139.7,
       source: "location",
+    });
+    // 住所を調べるときも、丸めた位置しか外部に送らない
+    expect(asked).toEqual([[35.66, 139.7]]);
+    // 建物名・番地は KV のどこにも残らない
+    const stored = [...s.kv.data.values()].join("\n");
+    for (const word of ["サンプルマンション", "2丁目", "21-1", "150-0002", "35.658", "139.7016"]) {
+      expect(stored).not.toContain(word);
+    }
+  });
+
+  it("リバースジオコーダが失敗したら、住所の文字列から市区町村までを切り出す", async () => {
+    const s = makeServices({
+      reverseGeocode: async () => {
+        throw new Error("timeout");
+      },
+    });
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    await processEvents(
+      [locationEvent({ address: "日本、〒220-0012 神奈川県横浜市西区みなとみらい2-2-1", latitude: 35.45, longitude: 139.63 })],
+      s,
+      at(21),
+    );
+    vi.restoreAllMocks();
+    expect((await getSettings(s.kv, s.config)).location?.name).toBe("神奈川県横浜市西区");
+  });
+
+  it("名前がまったくわからなければ「指定した地点」", async () => {
+    const s = makeServices();
+    await processEvents([locationEvent({ latitude: 35.45, longitude: 139.63 })], s, at(21));
+    expect((await getSettings(s.kv, s.config)).location?.name).toBe("指定した地点");
+  });
+
+  it("地名を送るとジオコーダで地点を保存する（名前はリバースジオコーダの市区町村）", async () => {
+    const s = makeServices({
+      geocode: async () => ({ name: "東京都渋谷区渋谷二丁目", lat: 35.659012, lon: 139.703456 }),
+      reverseGeocode: async () => "東京都渋谷区",
+    });
+    expect(await send(s, "地点 渋谷区渋谷2丁目")).toContain("地点を「東京都渋谷区」に設定しました");
+    expect((await getSettings(s.kv, s.config)).location).toEqual({
+      name: "東京都渋谷区",
+      lat: 35.66,
+      lon: 139.7,
+      source: "geocode",
     });
   });
 
-  it("地名を送るとジオコーダで地点を保存する", async () => {
-    const s = makeServices({ geocode: async () => ({ name: "東京都渋谷区", lat: 35.664, lon: 139.698 }) });
-    expect(await send(s, "地点 渋谷区")).toContain("地点を「東京都渋谷区」に設定しました");
-    expect((await getSettings(s.kv, s.config)).location?.source).toBe("geocode");
+  it("以前の形式で詳しい位置が保存されていても、読み込み時に丸める", async () => {
+    const s = makeServices();
+    await storeSettings(s.kv, { location: { name: "東京都渋谷区", lat: 35.658034, lon: 139.701636, source: "location" } });
+    expect((await getSettings(s.kv, s.config)).location).toMatchObject({ lat: 35.66, lon: 139.7 });
   });
 
   it("見つからなければ保存しない", async () => {

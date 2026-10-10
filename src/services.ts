@@ -3,7 +3,7 @@
 import type { Config, Env } from "./config";
 import { loadConfig } from "./config";
 import type { GeocodeResult } from "./commands/geocode";
-import { geocode } from "./commands/geocode";
+import { geocode, reverseGeocode } from "./commands/geocode";
 import { defaultSleep } from "./http";
 import type { LineApi } from "./notify/line";
 import { LineClient } from "./notify/line";
@@ -22,6 +22,8 @@ export interface Services {
   fetchForecast(lat: number, lon: number): Promise<Forecast>;
   fetchNowcast(lat: number, lon: number): Promise<Nowcast>;
   geocode(query: string): Promise<GeocodeResult | null>;
+  /** 緯度経度 → 「都道府県＋市区町村」 */
+  reverseGeocode(lat: number, lon: number): Promise<string | null>;
   sleep(ms: number): Promise<void>;
 }
 
@@ -35,6 +37,7 @@ export function createServices(env: Env): Services {
     fetchForecast: (lat, lon) => fetchForecast(lat, lon),
     fetchNowcast: (lat, lon) => fetchNowcast(lat, lon, env.YAHOO_APP_ID),
     geocode: (query) => geocode(query, env.YAHOO_APP_ID),
+    reverseGeocode: (lat, lon) => reverseGeocode(lat, lon, env.YAHOO_APP_ID),
     sleep: defaultSleep,
   };
 }

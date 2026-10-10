@@ -50,6 +50,7 @@ export function makeServices(overrides: Partial<Services> = {}): Services & { kv
     fetchForecast: async () => sampleForecast(),
     fetchNowcast: async () => nowcast(0, [0, 0, 0, 0, 0, 0]),
     geocode: async () => null,
+    reverseGeocode: async () => null,
     sleep: async () => {},
     ...overrides,
   } as Services & { kv: MemoryKv; line: FakeLine };
