@@ -1,10 +1,9 @@
 // 朝の天気通知（spec.md 3.1）
 
-import { morningFailedMessage, morningMessage, setupNeededMessage } from "../notify/messages";
+import { morningFailedMessage, morningMessage } from "../notify/messages";
 import type { Services } from "../services";
-import type { Settings } from "../state";
+import type { Location, Settings } from "../state";
 import { setMorningFlag } from "../state";
-import type { JstTime } from "../time";
 import { formatDateJa, parseHm, toJst } from "../time";
 import type { Forecast } from "../weather/openMeteo";
 import { judgeUmbrella } from "../weather/umbrella";
@@ -12,37 +11,38 @@ import { judgeUmbrella } from "../weather/umbrella";
 const FORECAST_ATTEMPTS = 3;
 const FORECAST_RETRY_WAIT_MS = 5000;
 
-export type MorningResult = "sent" | "setup-needed" | "forecast-failed";
+export type MorningResult = "sent" | "forecast-failed";
 
-export async function runMorning(s: Services, settings: Settings, nowMs: number): Promise<MorningResult> {
-  const jst = toJst(nowMs);
-  const { text, result } = await buildMorningText(s, settings, jst);
-  // 送信に失敗したら例外のまま抜け、送信済みフラグを立てない（30分の猶予内で次の実行が再送する）
-  await s.line.push(text);
-  await setMorningFlag(s.kv, jst.date, "sent");
-  return result;
-}
-
-async function buildMorningText(
+/** 地点が設定済みの利用者に朝の通知を送る（地点が未設定の利用者には送らない。FR-5-7） */
+export async function runMorning(
   s: Services,
-  settings: Settings,
-  jst: JstTime,
-): Promise<{ text: string; result: MorningResult }> {
+  userId: string,
+  settings: Settings & { location: Location },
+  nowMs: number,
+): Promise<MorningResult> {
+  const jst = toJst(nowMs);
   const location = settings.location;
-  if (!location) return { text: setupNeededMessage(), result: "setup-needed" };
-
   const forecast = await fetchWithRetry(s, location.lat, location.lon);
-  if (!forecast) return { text: morningFailedMessage(), result: "forecast-failed" };
 
-  const c = s.config;
-  const startHour = Math.floor(parseHm(settings.morningTime) / 60);
-  const umbrella = judgeUmbrella(forecast.hourly, startHour, c.umbrellaEndHour, {
-    probRequired: c.umbrellaProbRequired,
-    probFolding: c.umbrellaProbFolding,
-    precipRequired: c.umbrellaPrecipRequired,
-    hourPrecip: c.umbrellaHourPrecip,
-  });
-  return { text: morningMessage(location.name, formatDateJa(jst), forecast.daily, umbrella), result: "sent" };
+  let text: string;
+  if (forecast) {
+    const c = s.config;
+    const startHour = Math.floor(parseHm(settings.morningTime) / 60);
+    const umbrella = judgeUmbrella(forecast.hourly, startHour, c.umbrellaEndHour, {
+      probRequired: c.umbrellaProbRequired,
+      probFolding: c.umbrellaProbFolding,
+      precipRequired: c.umbrellaPrecipRequired,
+      hourPrecip: c.umbrellaHourPrecip,
+    });
+    text = morningMessage(location.name, formatDateJa(jst), forecast.daily, umbrella);
+  } else {
+    text = morningFailedMessage();
+  }
+
+  // 送信に失敗したら例外のまま抜け、送信済みフラグを立てない（30分の猶予内で次の実行が再送する）
+  await s.line.push(userId, text);
+  await setMorningFlag(s.kv, userId, jst.date, "sent");
+  return forecast ? "sent" : "forecast-failed";
 }
 
 async function fetchWithRetry(s: Services, lat: number, lon: number): Promise<Forecast | null> {

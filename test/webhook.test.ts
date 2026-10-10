@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { getMorningFlag, getRainState, getSettings, saveRainState, setMorningFlag } from "../src/state";
+import { addUser, getMorningFlag, getRainState, getSettings, getUsers, saveRainState, setMorningFlag } from "../src/state";
 import { describeMessage, handleWebhook, processEvents, verifySignature } from "../src/webhook";
-import { TOKYO, at, makeServices, storeSettings } from "./helpers";
+import { OWNER, TOKYO, at, makeServices, storeSettings } from "./helpers";
 
 async function sign(body: string, secret: string): Promise<string> {
   const enc = new TextEncoder();
@@ -61,12 +61,13 @@ describe("verifySignature / handleWebhook", () => {
   });
 });
 
-describe("本人確認", () => {
-  it("本人以外のメッセージは無視し、設定も変えない", async () => {
+describe("登録していない人", () => {
+  it("設定の操作はできず、招待コードの案内を返す", async () => {
     const s = makeServices();
     await processEvents([textEvent("朝 6:30", "Uother")], s, at(21));
-    expect(s.line.replies).toHaveLength(0);
-    expect((await getSettings(s.kv, s.config)).morningTime).toBe("07:00");
+    expect(s.line.replies[0].text).toContain("このサービスは招待制です");
+    expect((await getSettings(s.kv, s.config, "Uother")).morningTime).toBe("07:00");
+    expect(s.kv.data.has("settings:Uother")).toBe(false);
   });
 });
 
@@ -96,7 +97,7 @@ describe("地点", () => {
       at(21),
     );
     expect(s.line.replies[0].text).toContain("地点を「東京都渋谷区」に設定しました");
-    expect((await getSettings(s.kv, s.config)).location).toEqual({
+    expect((await getSettings(s.kv, s.config, "Uowner")).location).toEqual({
       name: "東京都渋谷区",
       lat: 35.66,
       lon: 139.7,
@@ -124,13 +125,13 @@ describe("地点", () => {
       at(21),
     );
     vi.restoreAllMocks();
-    expect((await getSettings(s.kv, s.config)).location?.name).toBe("神奈川県横浜市西区");
+    expect((await getSettings(s.kv, s.config, "Uowner")).location?.name).toBe("神奈川県横浜市西区");
   });
 
   it("名前がまったくわからなければ「指定した地点」", async () => {
     const s = makeServices();
     await processEvents([locationEvent({ latitude: 35.45, longitude: 139.63 })], s, at(21));
-    expect((await getSettings(s.kv, s.config)).location?.name).toBe("指定した地点");
+    expect((await getSettings(s.kv, s.config, "Uowner")).location?.name).toBe("指定した地点");
   });
 
   it("地名を送るとジオコーダで地点を保存する（名前はリバースジオコーダの市区町村）", async () => {
@@ -139,7 +140,7 @@ describe("地点", () => {
       reverseGeocode: async () => "東京都渋谷区",
     });
     expect(await send(s, "地点 渋谷区渋谷2丁目")).toContain("地点を「東京都渋谷区」に設定しました");
-    expect((await getSettings(s.kv, s.config)).location).toEqual({
+    expect((await getSettings(s.kv, s.config, "Uowner")).location).toEqual({
       name: "東京都渋谷区",
       lat: 35.66,
       lon: 139.7,
@@ -150,19 +151,19 @@ describe("地点", () => {
   it("以前の形式で詳しい位置が保存されていても、読み込み時に丸める", async () => {
     const s = makeServices();
     await storeSettings(s.kv, { location: { name: "東京都渋谷区", lat: 35.658034, lon: 139.701636, source: "location" } });
-    expect((await getSettings(s.kv, s.config)).location).toMatchObject({ lat: 35.66, lon: 139.7 });
+    expect((await getSettings(s.kv, s.config, "Uowner")).location).toMatchObject({ lat: 35.66, lon: 139.7 });
   });
 
   it("見つからなければ保存しない", async () => {
     const s = makeServices({ geocode: async () => null });
     expect(await send(s, "地点 しぶやく")).toContain("「しぶやく」が見つかりませんでした");
-    expect((await getSettings(s.kv, s.config)).location).toBeNull();
+    expect((await getSettings(s.kv, s.config, "Uowner")).location).toBeNull();
   });
 
   it("国外なら保存しない", async () => {
     const s = makeServices({ geocode: async () => ({ name: "San Francisco", lat: 37.77, lon: -122.42 }) });
     expect(await send(s, "地点 San Francisco")).toContain("日本国内の地点のみ");
-    expect((await getSettings(s.kv, s.config)).location).toBeNull();
+    expect((await getSettings(s.kv, s.config, "Uowner")).location).toBeNull();
   });
 
   it("ジオコーダが失敗したら再試行を案内する", async () => {
@@ -176,9 +177,9 @@ describe("地点", () => {
 
   it("地点を変えると雨の最中の状態をリセットし、通知回数は残す", async () => {
     const s = makeServices({ geocode: async () => ({ name: "大阪市", lat: 34.69, lon: 135.5 }) });
-    await saveRainState(s.kv, "2026-10-10", { count: 2, raining: true, lastNotifiedAt: null, lastLevel: "rain" });
+    await saveRainState(s.kv, "Uowner", "2026-10-10", { count: 2, raining: true, lastNotifiedAt: null, lastLevel: "rain" });
     await send(s, "地点 大阪市", at(14));
-    expect(await getRainState(s.kv, "2026-10-10")).toMatchObject({ count: 2, raining: false });
+    expect(await getRainState(s.kv, "Uowner", "2026-10-10")).toMatchObject({ count: 2, raining: false });
   });
 
   it("「地点」だけなら現在の地点を返す", async () => {
@@ -193,39 +194,39 @@ describe("朝の通知時刻", () => {
     const reply = await send(s, "朝 6:30", at(21));
     expect(reply).toContain("朝の通知時刻を 6:30 に変更しました");
     expect(reply).toContain("次回は 明日 10月11日(日) 6:30");
-    expect((await getSettings(s.kv, s.config)).morningTime).toBe("06:30");
+    expect((await getSettings(s.kv, s.config, "Uowner")).morningTime).toBe("06:30");
   });
 
   it("新しい時刻より前に変更すると今日からの案内になる", async () => {
     const s = makeServices();
     expect(await send(s, "朝 6時半", at(5))).toContain("次回は 今日 10月10日(土) 6:30");
-    expect(await getMorningFlag(s.kv, "2026-10-10")).toBeNull();
+    expect(await getMorningFlag(s.kv, "Uowner", "2026-10-10")).toBeNull();
   });
 
   it("新しい時刻を過ぎてから変更すると、今日は送らない（skipped）", async () => {
     const s = makeServices();
     expect(await send(s, "朝 6:30", at(6, 45))).toContain("明日");
-    expect(await getMorningFlag(s.kv, "2026-10-10")).toBe("skipped");
+    expect(await getMorningFlag(s.kv, "Uowner", "2026-10-10")).toBe("skipped");
   });
 
   it("skipped の日に、まだ来ていない時刻へ変え直すと今日の通知が復活する", async () => {
     const s = makeServices();
-    await setMorningFlag(s.kv, "2026-10-10", "skipped");
+    await setMorningFlag(s.kv, "Uowner", "2026-10-10", "skipped");
     expect(await send(s, "朝 8:00", at(6, 50))).toContain("今日");
-    expect(await getMorningFlag(s.kv, "2026-10-10")).toBeNull();
+    expect(await getMorningFlag(s.kv, "Uowner", "2026-10-10")).toBeNull();
   });
 
   it("今日が送信済みなら明日から", async () => {
     const s = makeServices();
-    await setMorningFlag(s.kv, "2026-10-10", "sent");
+    await setMorningFlag(s.kv, "Uowner", "2026-10-10", "sent");
     expect(await send(s, "朝 10:00", at(7, 30))).toContain("明日");
-    expect(await getMorningFlag(s.kv, "2026-10-10")).toBe("sent");
+    expect(await getMorningFlag(s.kv, "Uowner", "2026-10-10")).toBe("sent");
   });
 
   it.each(["朝 13:00", "朝 6:35", "朝 あさ"])("「%s」はエラーで、設定は変えない", async (text) => {
     const s = makeServices();
     expect(await send(s, text)).toContain("4:00〜11:50 の間で、10分単位");
-    expect((await getSettings(s.kv, s.config)).morningTime).toBe("07:00");
+    expect((await getSettings(s.kv, s.config, "Uowner")).morningTime).toBe("07:00");
   });
 });
 
@@ -233,13 +234,13 @@ describe("急な雨の通知時間帯", () => {
   it("変更を保存して返信する", async () => {
     const s = makeServices();
     expect(await send(s, "雨 7-22")).toContain("急な雨のお知らせを 7:00〜22:00 に変更しました");
-    expect((await getSettings(s.kv, s.config)).rainHours).toEqual({ start: 7, end: 22 });
+    expect((await getSettings(s.kv, s.config, "Uowner")).rainHours).toEqual({ start: 7, end: 22 });
   });
 
   it("日付をまたぐ指定はエラーで、設定は変えない", async () => {
     const s = makeServices();
     expect(await send(s, "雨 22-7")).toContain("日付をまたぐ指定はできません");
-    expect((await getSettings(s.kv, s.config)).rainHours).toEqual({ start: 6, end: 23 });
+    expect((await getSettings(s.kv, s.config, "Uowner")).rainHours).toEqual({ start: 6, end: 23 });
   });
 });
 
@@ -326,10 +327,13 @@ describe("友だち追加（follow）", () => {
     expect(await send(s, "設定")).toContain("⚙️ 現在の設定");
   });
 
-  it("本人以外の友だち追加には返信しない", async () => {
+  it("登録していない人の友だち追加には、招待コードの案内と地点の扱いを返す", async () => {
     const s = makeServices();
     await processEvents([followEvent("Uother")], s, at(21));
-    expect(s.line.replies).toHaveLength(0);
+    const text = s.line.replies[0].text;
+    expect(text).toContain("招待コードを「招待 ◯◯◯◯」のように送ってください");
+    expect(text).toContain("市区町村までしか保存しません");
+    expect(text).toContain("ブロックすると、登録した内容はすべて削除されます");
   });
 
   it("ブロック（unfollow）には返信しない", async () => {
@@ -371,6 +375,112 @@ describe("設定・ヘルプ", () => {
       s,
       at(21),
     );
+    expect(s.line.replies[0].text).toContain("雨通知の使い方");
+  });
+});
+
+describe("招待制", () => {
+  async function guestSends(s: ReturnType<typeof makeServices>, text: string, userId = "Ufriend"): Promise<string> {
+    s.line.replies = [];
+    await processEvents([textEvent(text, userId)], s, at(21));
+    return s.line.replies[0]?.text ?? "";
+  }
+
+  it("正しい招待コードで登録され、設定手順の案内が届く", async () => {
+    const s = makeServices({ inviteCode: "ame2026" });
+    const reply = await guestSends(s, "招待 ame2026");
+    expect(reply.startsWith("✅ 招待コードを確認しました！")).toBe(true);
+    expect(reply).toContain("📍 【STEP 1】");
+    expect(await getUsers(s.kv, OWNER)).toEqual([OWNER, "Ufriend"]);
+  });
+
+  it("全角・大文字小文字の違いは区別しない（「招待　ＡＭＥ２０２６」でも登録できる）", async () => {
+    const s = makeServices({ inviteCode: "ame2026" });
+    expect(await guestSends(s, "招待　ＡＭＥ２０２６")).toContain("招待コードを確認しました");
+  });
+
+  it("違う招待コードでは登録されない", async () => {
+    const s = makeServices({ inviteCode: "ame2026" });
+    expect(await guestSends(s, "招待 hare2026")).toContain("招待コードが違います");
+    expect(await getUsers(s.kv, OWNER)).toEqual([OWNER]);
+  });
+
+  it("招待コードが未設定なら受け付けない", async () => {
+    const s = makeServices();
+    expect(await guestSends(s, "招待 ame2026")).toContain("新しい利用者は受け付けていません");
+    expect(await getUsers(s.kv, OWNER)).toEqual([OWNER]);
+  });
+
+  it("定員（管理者を含め3人）に達したら登録しない", async () => {
+    const s = makeServices({ inviteCode: "ame2026" });
+    await addUser(s.kv, OWNER, "Ua");
+    await addUser(s.kv, OWNER, "Ub");
+    expect(await guestSends(s, "招待 ame2026", "Uc")).toContain("人数がいっぱいです");
+    expect(await getUsers(s.kv, OWNER)).toEqual([OWNER, "Ua", "Ub"]);
+  });
+
+  it("登録後は自分の設定だけが変わり、ほかの人の設定は変わらない", async () => {
+    const s = makeServices({ inviteCode: "ame2026" });
+    await storeSettings(s.kv, { morningTime: "07:00" });
+    await guestSends(s, "招待 ame2026");
+    expect(await guestSends(s, "朝 6:30")).toContain("6:30 に変更しました");
+    expect((await getSettings(s.kv, s.config, "Ufriend")).morningTime).toBe("06:30");
+    expect((await getSettings(s.kv, s.config, OWNER)).morningTime).toBe("07:00");
+    expect(await guestSends(s, "設定")).toContain("📍 地点：未設定");
+  });
+
+  it("登録済みの人が招待コードを送ると、登録済みと返す", async () => {
+    const s = makeServices({ inviteCode: "ame2026" });
+    expect(await send(s, "招待 ame2026")).toContain("すでに登録されています");
+  });
+
+  it("ブロックすると、その人の設定を削除して登録を解除する", async () => {
+    const s = makeServices();
+    await addUser(s.kv, OWNER, "Ufriend");
+    await storeSettings(s.kv, {}, "Ufriend");
+    await storeSettings(s.kv, {});
+    await processEvents([{ type: "unfollow", source: { userId: "Ufriend" } }], s, at(21));
+    expect(s.kv.data.has("settings:Ufriend")).toBe(false);
+    expect(await getUsers(s.kv, OWNER)).toEqual([OWNER]);
+    // ほかの人の設定は残る
+    expect(s.kv.data.has(`settings:${OWNER}`)).toBe(true);
+  });
+
+  it("管理者がブロックしても利用者からは外れないが、設定は削除する", async () => {
+    const s = makeServices();
+    await storeSettings(s.kv, {});
+    await processEvents([{ type: "unfollow", source: { userId: OWNER } }], s, at(21));
+    expect(s.kv.data.has(`settings:${OWNER}`)).toBe(false);
+    expect(await getUsers(s.kv, OWNER)).toEqual([OWNER]);
+  });
+
+  it("ログに LINE ユーザーID と招待コードを出さない", async () => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    const s = makeServices({ inviteCode: "ame2026" });
+    await guestSends(s, "こんにちは");
+    await guestSends(s, "招待 ame2026");
+    await processEvents([{ type: "unfollow", source: { userId: "Ufriend" } }], s, at(21));
+    const output = log.mock.calls.map((args) => args.join(" ")).join("\n");
+    vi.restoreAllMocks();
+    expect(output).toContain("（未登録） に返信");
+    expect(output).not.toMatch(/Ufriend|Uowner|ame2026/);
+  });
+});
+
+describe("利用状況（管理者のみ）", () => {
+  it("管理者には利用者数と今月の送信数を返す", async () => {
+    const s = makeServices();
+    s.line.quota = { limit: 200, used: 45 };
+    await addUser(s.kv, OWNER, "Ufriend");
+    expect(await send(s, "利用状況")).toBe(["📊 利用状況", "👥 利用者：2/3人", "📨 今月の送信数：45/200通"].join("\n"));
+  });
+
+  it("管理者以外には表示しない", async () => {
+    const s = makeServices();
+    await addUser(s.kv, OWNER, "Ufriend");
+    s.line.replies = [];
+    await processEvents([textEvent("利用状況", "Ufriend")], s, at(21));
+    expect(s.line.replies[0].text).not.toContain("利用状況");
     expect(s.line.replies[0].text).toContain("雨通知の使い方");
   });
 });

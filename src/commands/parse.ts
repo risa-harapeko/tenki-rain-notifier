@@ -1,6 +1,6 @@
 // LINE から届いたテキストの正規化とコマンド解析（spec.md 3.5.3 / 3.5.4）
 
-export type CommandType = "location" | "morning" | "rain" | "settings" | "help";
+export type CommandType = "location" | "morning" | "rain" | "settings" | "help" | "invite" | "usage";
 
 export interface Command {
   type: CommandType | "unknown";
@@ -27,6 +27,8 @@ const KEYWORDS: [string, CommandType][] = (
     ["ヘルプ", "help"],
     ["使い方", "help"],
     ["help", "help"],
+    ["招待", "invite"],
+    ["利用状況", "usage"],
   ] as [string, CommandType][]
 ).sort((a, b) => b[0].length - a[0].length);
 

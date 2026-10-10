@@ -17,7 +17,10 @@ export interface Services {
   kv: KvStore;
   config: Config;
   line: LineApi;
-  userId: string;
+  /** 管理者（開発者本人）の LINE ユーザーID */
+  ownerId: string;
+  /** 招待コード。未設定なら新しい利用者を受け付けない */
+  inviteCode?: string;
   channelSecret: string;
   fetchForecast(lat: number, lon: number): Promise<Forecast>;
   fetchNowcast(lat: number, lon: number): Promise<Nowcast>;
@@ -31,8 +34,9 @@ export function createServices(env: Env): Services {
   return {
     kv: env.STATE,
     config: loadConfig(env),
-    line: new LineClient(env.LINE_CHANNEL_ACCESS_TOKEN, env.LINE_USER_ID),
-    userId: env.LINE_USER_ID,
+    line: new LineClient(env.LINE_CHANNEL_ACCESS_TOKEN),
+    ownerId: env.LINE_USER_ID,
+    inviteCode: env.INVITE_CODE?.trim() || undefined,
     channelSecret: env.LINE_CHANNEL_SECRET,
     fetchForecast: (lat, lon) => fetchForecast(lat, lon),
     fetchNowcast: (lat, lon) => fetchNowcast(lat, lon, env.YAHOO_APP_ID),

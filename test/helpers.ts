@@ -22,13 +22,16 @@ export class MemoryKv implements KvStore {
 }
 
 export class FakeLine implements LineApi {
+  /** 送った本文（送り先は pushedTo に同じ順で入る） */
   pushes: string[] = [];
+  pushedTo: string[] = [];
   replies: { token: string; text: string }[] = [];
   quota: Quota | null = { limit: 200, used: 0 };
   failPush = false;
-  async push(text: string) {
+  async push(to: string, text: string) {
     if (this.failPush) throw new Error("push failed");
     this.pushes.push(text);
+    this.pushedTo.push(to);
   }
   async reply(token: string, text: string) {
     this.replies.push({ token, text });
@@ -45,7 +48,7 @@ export function makeServices(overrides: Partial<Services> = {}): Services & { kv
     kv: new MemoryKv(),
     config: { ...DEFAULT_CONFIG },
     line: new FakeLine(),
-    userId: "Uowner",
+    ownerId: OWNER,
     channelSecret: "secret",
     fetchForecast: async () => sampleForecast(),
     fetchNowcast: async () => nowcast(0, [0, 0, 0, 0, 0, 0]),
@@ -56,9 +59,11 @@ export function makeServices(overrides: Partial<Services> = {}): Services & { kv
   } as Services & { kv: MemoryKv; line: FakeLine };
 }
 
-export async function storeSettings(kv: KvStore, settings: Partial<Settings>) {
+export const OWNER = "Uowner";
+
+export async function storeSettings(kv: KvStore, settings: Partial<Settings>, userId = OWNER) {
   await kv.put(
-    "settings",
+    `settings:${userId}`,
     JSON.stringify({ location: TOKYO, morningTime: "07:00", rainHours: { start: 6, end: 23 }, ...settings }),
   );
 }

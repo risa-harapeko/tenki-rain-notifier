@@ -102,19 +102,19 @@ describe("hasQuotaForAlert", () => {
   it("残り通数が残り日数より多ければ送る", async () => {
     const line = new FakeLine();
     line.quota = { limit: 200, used: 177 }; // 残り23
-    expect(await hasQuotaForAlert(line, jst)).toBe(true);
+    expect(await hasQuotaForAlert(line, jst, 1)).toBe(true);
   });
 
   it("残り通数が残り日数以下なら送らない（朝の通知を優先）", async () => {
     const line = new FakeLine();
     line.quota = { limit: 200, used: 178 }; // 残り22
-    expect(await hasQuotaForAlert(line, jst)).toBe(false);
+    expect(await hasQuotaForAlert(line, jst, 1)).toBe(false);
   });
 
   it("枠を取得できなければ送る", async () => {
     const line = new FakeLine();
     line.quota = null;
-    expect(await hasQuotaForAlert(line, jst)).toBe(true);
+    expect(await hasQuotaForAlert(line, jst, 1)).toBe(true);
   });
 });
 
@@ -122,28 +122,28 @@ describe("runRainAlert", () => {
   it("通知を送り、状態を保存する", async () => {
     const s = makeServices({ fetchNowcast: async () => nowcast(0, [0, 2, 5, 3, 0, 0]) });
     await storeSettings(s.kv, {});
-    const r = await runRainAlert(s, await getSettings(s.kv, s.config), NOW);
+    const r = await runRainAlert(s, "Uowner", await getSettings(s.kv, s.config, "Uowner"), NOW, 1);
     expect(r).toMatchObject({ action: "notify", sent: true });
     expect(s.line.pushes[0]).toContain("約20分後（14:20ごろ）");
     expect(s.line.pushes[0]).toContain("（本日の雨通知 1/3）");
-    expect((await getRainState(s.kv, "2026-10-10")).count).toBe(1);
+    expect((await getRainState(s.kv, "Uowner", "2026-10-10")).count).toBe(1);
   });
 
   it("送信枠が足りなければ送らず、通知回数も増やさない", async () => {
     const s = makeServices({ fetchNowcast: async () => nowcast(0, [5, 5, 0, 0, 0, 0]) });
     s.line.quota = { limit: 200, used: 199 };
     await storeSettings(s.kv, {});
-    const r = await runRainAlert(s, await getSettings(s.kv, s.config), NOW);
+    const r = await runRainAlert(s, "Uowner", await getSettings(s.kv, s.config, "Uowner"), NOW, 1);
     expect(r.sent).toBe(false);
     expect(s.line.pushes).toHaveLength(0);
-    expect((await getRainState(s.kv, "2026-10-10")).count).toBe(0);
+    expect((await getRainState(s.kv, "Uowner", "2026-10-10")).count).toBe(0);
   });
 
   it("状態が変わらなければ KV に書き込まない", async () => {
     const s = makeServices();
     await storeSettings(s.kv, {});
     const writesBefore = s.kv.writes;
-    await runRainAlert(s, await getSettings(s.kv, s.config), NOW);
+    await runRainAlert(s, "Uowner", await getSettings(s.kv, s.config, "Uowner"), NOW, 1);
     expect(s.kv.writes).toBe(writesBefore);
   });
 });

@@ -13,7 +13,7 @@ export interface Quota {
 
 export interface LineApi {
   /** 利用者へのプッシュ送信（月200通の枠を消費する） */
-  push(text: string): Promise<void>;
+  push(to: string, text: string): Promise<void>;
   /** 応答メッセージ（通数に数えない） */
   reply(replyToken: string, text: string): Promise<void>;
   /** 当月の送信枠。取得できなければ null */
@@ -23,7 +23,6 @@ export interface LineApi {
 export class LineClient implements LineApi {
   constructor(
     private readonly token: string,
-    private readonly userId: string,
     private readonly fetchImpl: FetchLike = defaultFetch,
     private readonly sleep: (ms: number) => Promise<void> = defaultSleep,
   ) {}
@@ -32,10 +31,10 @@ export class LineClient implements LineApi {
     return { Authorization: `Bearer ${this.token}`, "Content-Type": "application/json", ...extra };
   }
 
-  async push(text: string): Promise<void> {
+  async push(to: string, text: string): Promise<void> {
     // 同じ Retry Key で再送すれば、LINE 側で二重送信が防がれる
     const retryKey = crypto.randomUUID();
-    const body = JSON.stringify({ to: this.userId, messages: [{ type: "text", text }] });
+    const body = JSON.stringify({ to, messages: [{ type: "text", text }] });
     let lastError = "";
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
       if (attempt > 0) await this.sleep(1000 * attempt);

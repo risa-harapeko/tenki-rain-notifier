@@ -3,3 +3,5 @@ LINE_CHANNEL_ACCESS_TOKEN=
 LINE_CHANNEL_SECRET=
 LINE_USER_ID=
 YAHOO_APP_ID=
+# ほかの人に使ってもらう場合だけ（未設定なら新しい利用者を受け付けない）
+INVITE_CODE=

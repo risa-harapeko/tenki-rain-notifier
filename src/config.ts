@@ -9,6 +9,9 @@ export interface Env {
   LINE_CHANNEL_SECRET: string;
   LINE_USER_ID: string;
   YAHOO_APP_ID: string;
+  /** 招待コード（未設定なら新しい利用者を受け付けない） */
+  INVITE_CODE?: string;
+  MAX_USERS?: string;
   DEFAULT_MORNING_TIME?: string;
   DEFAULT_RAIN_HOURS?: string;
   UMBRELLA_END_HOUR?: string;
@@ -33,6 +36,8 @@ export interface Config {
   rainThreshold: number;
   maxAlertsPerDay: number;
   alertCooldownMin: number;
+  /** 管理者を含めた利用者数の上限 */
+  maxUsers: number;
 }
 
 export const DEFAULT_CONFIG: Config = {
@@ -46,6 +51,7 @@ export const DEFAULT_CONFIG: Config = {
   rainThreshold: 1.0,
   maxAlertsPerDay: 3,
   alertCooldownMin: 60,
+  maxUsers: 3,
 };
 
 function num(value: string | undefined, fallback: number): number {
@@ -82,5 +88,6 @@ export function loadConfig(env: Env): Config {
     rainThreshold: num(env.RAIN_THRESHOLD, d.rainThreshold),
     maxAlertsPerDay: num(env.MAX_ALERTS_PER_DAY, d.maxAlertsPerDay),
     alertCooldownMin: num(env.ALERT_COOLDOWN_MIN, d.alertCooldownMin),
+    maxUsers: Math.max(1, Math.floor(num(env.MAX_USERS, d.maxUsers))),
   };
 }

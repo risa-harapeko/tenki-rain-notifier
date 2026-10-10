@@ -140,8 +140,46 @@ export function welcomeMessage(): string {
   ].join("\n");
 }
 
-export function setupNeededMessage(): string {
-  return `⚠️ 天気を調べる地点がまだ設定されていません。\n\n${helpMessage()}`;
+// ---- 招待・利用者 ----
+
+/** 登録していない人への案内（友だち追加・メッセージ送信のとき） */
+export function invitePromptMessage(): string {
+  return [
+    "☔ 雨ふり予報へようこそ！",
+    "このサービスは招待制です。",
+    "招待コードを「招待 ◯◯◯◯」のように送ってください。",
+    "",
+    "🔒 天気を調べる地点は市区町村までしか保存しません。",
+    "ブロックすると、登録した内容はすべて削除されます。",
+  ].join("\n");
+}
+
+export function inviteAcceptedMessage(): string {
+  return `✅ 招待コードを確認しました！\n\n${welcomeMessage()}`;
+}
+
+export function inviteInvalidMessage(): string {
+  return "⚠️ 招待コードが違います。もう一度確認して送ってください。";
+}
+
+export function inviteFullMessage(): string {
+  return "🙇 ただいま利用できる人数がいっぱいです。空きができるまでお待ちください。";
+}
+
+export function inviteClosedMessage(): string {
+  return "🙇 現在、新しい利用者は受け付けていません。";
+}
+
+export function alreadyRegisteredMessage(): string {
+  return "✅ すでに登録されています。「設定」と送ると、今の設定を確認できます。";
+}
+
+/** 管理者向けの利用状況 */
+export function usageMessage(userCount: number, maxUsers: number, quota: { limit: number; used: number } | null): string {
+  const sent = quota
+    ? `${quota.used}/${Number.isFinite(quota.limit) ? quota.limit : "上限なし"}通`
+    : "取得できませんでした";
+  return ["📊 利用状況", `👥 利用者：${userCount}/${maxUsers}人`, `📨 今月の送信数：${sent}`].join("\n");
 }
 
 export function locationSetMessage(name: string, morningTime: string): string {

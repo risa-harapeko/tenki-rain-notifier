@@ -74,13 +74,16 @@ export function evaluateRain(prev: RainState, nowcast: Nowcast, nowMs: number, r
   return result("none", base, base, null);
 }
 
-/** 朝の通知の分を残せるか（残り通数 <= 当月の残り日数 なら急な雨の通知は送らない） */
-export async function hasQuotaForAlert(line: LineApi, jst: JstTime): Promise<boolean> {
+/**
+ * 全員分の朝の通知を月末まで送れる通数を残せるか（NFR-1-6）。
+ * 残り通数 <= 当月の残り日数 × 利用者数 なら、急な雨の通知は送らない。
+ */
+export async function hasQuotaForAlert(line: LineApi, jst: JstTime, userCount: number): Promise<boolean> {
   const quota = await line.getQuota();
   if (!quota) return true; // 取得できない場合は送信を優先する
   const remaining = quota.limit - quota.used;
   const daysLeft = daysInMonth(jst.year, jst.month) - jst.day + 1;
-  return remaining > daysLeft;
+  return remaining > daysLeft * userCount;
 }
 
 export interface RainAlertResult {
@@ -90,22 +93,29 @@ export interface RainAlertResult {
   peak: number;
 }
 
-export async function runRainAlert(s: Services, settings: Settings, nowMs: number): Promise<RainAlertResult> {
+export async function runRainAlert(
+  s: Services,
+  userId: string,
+  settings: Settings,
+  nowMs: number,
+  userCount: number,
+): Promise<RainAlertResult> {
   const location = settings.location;
   if (!location) throw new Error("rainAlert: 地点が未設定");
   const jst = toJst(nowMs);
   const c = s.config;
 
   const nowcast = await s.fetchNowcast(location.lat, location.lon);
-  const prev = await getRainState(s.kv, jst.date);
+  const prev = await getRainState(s.kv, userId, jst.date);
   const d = evaluateRain(prev, nowcast, nowMs, c);
 
   let toSave = d.base;
   let sent = false;
   if (d.action !== "none" && d.onset && d.peakLevel) {
-    if (await hasQuotaForAlert(s.line, jst)) {
+    if (await hasQuotaForAlert(s.line, jst, userCount)) {
       try {
         await s.line.push(
+          userId,
           rainAlertMessage({
             placeName: location.name,
             kind: d.action,
@@ -128,6 +138,6 @@ export async function runRainAlert(s: Services, settings: Settings, nowMs: numbe
   }
 
   // KV の書き込みは状態が変わったときだけ
-  if (JSON.stringify(toSave) !== JSON.stringify(prev)) await saveRainState(s.kv, jst.date, toSave);
+  if (JSON.stringify(toSave) !== JSON.stringify(prev)) await saveRainState(s.kv, userId, jst.date, toSave);
   return { action: d.action, sent, nowRain: d.nowRain, peak: d.peak };
 }
