@@ -244,6 +244,56 @@ describe("ログに地名を残さない", () => {
   });
 });
 
+describe("友だち追加（follow）", () => {
+  function followEvent(userId = "Uowner") {
+    return { type: "follow", replyToken: "rt", source: { userId } };
+  }
+
+  it("地点が未設定なら、あいさつ・地点設定のお願い・使い方を返す", async () => {
+    const s = makeServices();
+    await processEvents([followEvent()], s, at(21));
+    const text = s.line.replies[0].text;
+    expect(text.startsWith("👋 友だち追加ありがとうございます！")).toBe(true);
+    expect(text).toContain("まずは、天気を調べる地点を設定してください");
+    expect(text).toContain("☂️ 雨通知の使い方");
+    expect(text).not.toContain("現在の設定");
+  });
+
+  it("地点が設定済み（ブロック解除など）なら、現在の設定と使い方を返す", async () => {
+    const s = makeServices();
+    await storeSettings(s.kv, { location: TOKYO, morningTime: "06:30" });
+    await processEvents([followEvent()], s, at(21));
+    const text = s.line.replies[0].text;
+    expect(text).toContain("⚙️ 現在の設定");
+    expect(text).toContain("⏰ 朝の通知：6:30");
+    expect(text).toContain("☂️ 雨通知の使い方");
+    expect(text).not.toContain("まずは");
+  });
+
+  it("本人以外の友だち追加には返信しない", async () => {
+    const s = makeServices();
+    await processEvents([followEvent("Uother")], s, at(21));
+    expect(s.line.replies).toHaveLength(0);
+  });
+
+  it("ブロック（unfollow）には返信しない", async () => {
+    const s = makeServices();
+    await processEvents([{ type: "unfollow", replyToken: "rt", source: { userId: "Uowner" } }], s, at(21));
+    expect(s.line.replies).toHaveLength(0);
+  });
+
+  it("ログには follow とだけ書き、地名を出さない", async () => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    const s = makeServices();
+    await storeSettings(s.kv, { location: TOKYO });
+    await processEvents([followEvent()], s, at(21));
+    const output = log.mock.calls.map((args) => args.join(" ")).join("\n");
+    vi.restoreAllMocks();
+    expect(output).toContain("webhook: follow に返信");
+    expect(output).not.toContain("渋谷");
+  });
+});
+
 describe("設定・ヘルプ", () => {
   it("「設定」でまとめて返す", async () => {
     const s = makeServices();

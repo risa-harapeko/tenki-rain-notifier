@@ -115,6 +115,22 @@ export function helpMessage(): string {
   ].join("\n");
 }
 
+/** 友だち追加・ブロック解除のときの案内 */
+export function welcomeMessage(s: Settings): string {
+  const lines = [
+    "👋 友だち追加ありがとうございます！",
+    "毎朝の天気と傘の要否、1時間以内の急な雨を LINE でお知らせします。",
+    "",
+  ];
+  if (s.location) {
+    lines.push(settingsMessage(s));
+  } else {
+    lines.push("📍 まずは、天気を調べる地点を設定してください。");
+  }
+  lines.push("", helpMessage());
+  return lines.join("\n");
+}
+
 export function setupNeededMessage(): string {
   return `⚠️ 天気を調べる地点がまだ設定されていません。\n\n${helpMessage()}`;
 }

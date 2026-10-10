@@ -80,15 +80,20 @@ export async function handleWebhook(
 
 export async function processEvents(events: LineEvent[], s: Services, nowMs = Date.now()): Promise<void> {
   for (const event of events) {
-    if (event.type !== "message" || !event.message || !event.replyToken) continue;
+    if (!event.replyToken) continue;
+    const isMessage = event.type === "message" && event.message !== undefined;
+    // follow: 友だち追加・ブロック解除
+    if (!isMessage && event.type !== "follow") continue;
     if (event.source?.userId !== s.userId) {
-      console.warn("webhook: 本人以外からのメッセージを無視しました");
+      console.warn(`webhook: 本人以外からの ${event.type} イベントを無視しました`);
       continue;
     }
     try {
-      const text = await respond(event.message, s, nowMs);
+      const text = isMessage
+        ? await respond(event.message!, s, nowMs)
+        : msg.welcomeMessage(await getSettings(s.kv, s.config));
       // 地名などの個人情報を残さないよう、ログには返信文ではなくメッセージの種類だけを書く
-      console.log(`webhook: ${describeMessage(event.message)} に返信`);
+      console.log(`webhook: ${isMessage ? describeMessage(event.message!) : "follow"} に返信`);
       await s.line.reply(event.replyToken, text);
     } catch (e) {
       console.error("webhook: メッセージの処理に失敗", e);
